@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import traceback
 import sys # For sys.stderr
+import subprocess # For opening file location
 
 import instrument_utils
 import gui_utils
@@ -75,6 +76,8 @@ class HistoryTabHandler:
         self.history_listbox.grid(row=0, column=0, sticky="nsew", pady=(0,5))
         self.history_listbox.bind("<<ListboxSelect>>", self._on_history_file_select)
         self.history_listbox.bind("<Double-1>", lambda event: self._plot_selected_history_files_action())
+        self.history_listbox.bind("<Delete>", self._delete_selected_files) # Added Delete binding
+        self.history_listbox.bind("<Button-3>", self._show_context_menu) # Added Right-click binding
         history_scrollbar = ttk.Scrollbar(list_area_frame, orient=tk.VERTICAL, command=self.history_listbox.yview)
         history_scrollbar.grid(row=0, column=1, sticky="ns", pady=(0,5))
         self.history_listbox.config(yscrollcommand=history_scrollbar.set)
@@ -150,6 +153,96 @@ class HistoryTabHandler:
         self._toggle_history_y_scale_entries()
         self.app.root.after_idle(lambda: history_main_h_pane.sashpos(0, 350))
 
+    def _delete_selected_files(self, event=None):
+        selected_indices = self.history_listbox.curselection()
+        if not selected_indices:
+            return
+
+        num_files = len(selected_indices)
+        confirm = messagebox.askyesno(
+            "确认删除",
+            f"您确定要永久删除这 {num_files} 个选中的文件吗？\n这将同时删除CSV文件和关联的图片文件。此操作无法撤销。",
+            parent=self.app.root
+        )
+
+        if not confirm:
+            return
+
+        deleted_count = 0
+        failed_deletions = []
+        current_output_dir = self.app.output_dir.get()
+        filenames_to_delete = [self.history_listbox.get(i) for i in selected_indices]
+
+        for filename_csv in filenames_to_delete:
+            try:
+                base_name_no_ext = os.path.splitext(filename_csv)[0]
+                measurement_type_short = instrument_utils.get_short_measurement_type(filename_csv)
+                plot_suffix = instrument_utils.get_plot_suffix_for_measurement(measurement_type_short)
+                filename_png = base_name_no_ext + plot_suffix
+
+                csv_path = os.path.join(current_output_dir, filename_csv)
+                png_path = os.path.join(current_output_dir, filename_png)
+
+                if os.path.exists(csv_path):
+                    os.remove(csv_path)
+                if os.path.exists(png_path):
+                    os.remove(png_path)
+                
+                deleted_count += 1
+            except Exception as e:
+                failed_deletions.append(filename_csv)
+                print(f"删除文件 {filename_csv} 或其绘图时出错: {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+
+        self.refresh_file_list()
+        self._clear_history_plot_area()
+        self._on_history_file_select()
+
+        status_msg = f"已删除 {deleted_count} 个文件。"
+        if failed_deletions:
+            status_msg += f" {len(failed_deletions)} 个文件删除失败。"
+            messagebox.showwarning("删除错误", f"无法删除以下文件(或其绘图):\n\n" + "\n".join(failed_deletions) + "\n\n详情请查看控制台。")
+        
+        gui_utils.set_status(self.app, status_msg, error=bool(failed_deletions))
+
+    def _show_context_menu(self, event):
+        selection_index = self.history_listbox.nearest(event.y)
+        if selection_index != -1:
+            if not self.history_listbox.selection_includes(selection_index):
+                self.history_listbox.selection_clear(0, tk.END)
+                self.history_listbox.selection_set(selection_index)
+                self.history_listbox.activate(selection_index)
+                self._on_history_file_select()
+
+        if not self.history_listbox.curselection():
+            return
+
+        context_menu = tk.Menu(self.history_listbox, tearoff=0)
+        context_menu.add_command(label="打开文件所在位置", command=self._open_file_location)
+        
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
+    def _open_file_location(self):
+        output_dir = self.app.output_dir.get()
+        if not os.path.isdir(output_dir):
+            messagebox.showerror("错误", f"目录未找到:\n{output_dir}")
+            return
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(output_dir)
+            elif sys.platform == "darwin": # macOS
+                subprocess.Popen(["open", output_dir])
+            else: # Linux and other Unix-like
+                subprocess.Popen(["xdg-open", output_dir])
+        except FileNotFoundError:
+            messagebox.showerror("错误", "无法打开文件位置。所需的命令 (例如, 'xdg-open') 可能未在您的系统上安装。")
+        except Exception as e:
+            messagebox.showerror("错误", f"打开文件位置失败: {e}")
+            print(f"打开文件位置 '{output_dir}' 时出错: {e}", file=sys.stderr)
 
     def _on_history_file_select(self, event=None):
         selected_indices = self.history_listbox.curselection()
@@ -872,4 +965,3 @@ class HistoryTabHandler:
             messagebox.showerror("合并错误", f"合并系列数据时发生错误: {e_merge}")
             print(f"合并系列数据时发生错误: {e_merge}\n{traceback.format_exc()}", file=sys.stderr)
             gui_utils.set_status(self.app, "合并系列数据时出错。", error=True)
-

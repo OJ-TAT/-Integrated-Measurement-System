@@ -8,6 +8,47 @@ from datetime import datetime
 import config_settings # For default values if needed in reset functions
 import matplotlib.lines # For Line2D
 
+class CollapsibleFrame(ttk.Frame):
+    """一个可折叠的Tkinter框架控件。"""
+    def __init__(self, parent, text="", start_collapsed=False, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.columnconfigure(0, weight=1)
+        self.collapsed = tk.BooleanVar(value=start_collapsed)
+
+        self.header_frame = ttk.Frame(self)
+        self.header_frame.grid(row=0, column=0, sticky="ew")
+
+        # 使用 "Toolbutton" 样式使按钮看起来更融合
+        s = ttk.Style()
+        s.configure('Toolbutton.TButton', padding=0, relief='flat')
+        self.toggle_button = ttk.Button(self.header_frame, text="▶" if start_collapsed else "▼",
+                                        command=self.toggle, width=3, style="Toolbutton")
+        self.toggle_button.pack(side="left", padx=(0, 5), pady=2)
+
+        self.title_label = ttk.Label(self.header_frame, text=text, font=('TkDefaultFont', 10, 'bold'))
+        self.title_label.pack(side="left", fill="x", expand=True)
+        self.title_label.bind("<Button-1>", lambda e: self.toggle())
+
+        self.content_frame = ttk.Frame(self)
+
+        if not start_collapsed:
+            self.content_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(2,5))
+
+    def toggle(self):
+        if self.collapsed.get():
+            # 展开
+            self.content_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(2,5))
+            self.toggle_button.config(text="▼")
+            self.collapsed.set(False)
+        else:
+            # 折叠
+            self.content_frame.grid_forget()
+            self.toggle_button.config(text="▶")
+            self.collapsed.set(True)
+
+    def get_content_frame(self):
+        return self.content_frame
+
 class PlotAnnotationManager:
     """Manages a single annotation for a Matplotlib axes using ax.annotate."""
     def __init__(self, ax, fig_canvas):
@@ -202,8 +243,8 @@ STYLE_CONFIG = {
     'font_label': ('TkDefaultFont', 9),
     'font_button': ('TkDefaultFont', 10, 'bold'),
     'bg_frame': '#F8F9FA',
-    'padx': 12, 'pady': 8, 'entry_width': 18,
-    'entry_path_width': 40,
+    'padx': 12, 'pady': 8, 'entry_width': 2,
+    'entry_path_width': 2,
     'entry_bg_normal': 'white',
     'entry_bg_warning': 'lemon chiffon',
     'entry_bg_error': 'pink'
@@ -324,10 +365,16 @@ def param_entry_validator(app_instance, P, entry_widget_name, param_key, params_
         entry_widget.config(background=error_bg)
         return True # Return True to allow focus out, visual feedback is enough
 
-def create_param_frame(app_instance, parent_tab_frame, title, param_list_details, param_vars_dict, columns=2, entry_width=None, context_keys=None):
+def create_param_frame(app_instance, parent_tab_frame, title, param_list_details, param_vars_dict, columns=2, entry_width=None, context_keys=None, start_collapsed=False):
     style = STYLE_CONFIG
-    param_group_frame = ttk.LabelFrame(parent_tab_frame, text=title, padding=(style['padx']-4, style['pady']-4)) if title else ttk.Frame(parent_tab_frame, padding=(style['padx']-4, style['pady']-4))
-    param_group_frame.pack(fill=tk.X, expand=True, padx=style['padx']-2, pady=style['pady']-2, ipady=2)
+    
+    # 使用新的 CollapsibleFrame
+    collapsible_group_frame = CollapsibleFrame(parent_tab_frame, text=title, start_collapsed=start_collapsed)
+    collapsible_group_frame.pack(fill=tk.X, expand=True, padx=style['padx']-2, pady=(8,2), ipady=2)
+    
+    # 获取用于放置参数的内部框架
+    param_group_frame = collapsible_group_frame.get_content_frame()
+
     actual_entry_width = entry_width if entry_width is not None else style['entry_width']
 
     for i, (label_text, key, default_val_or_var) in enumerate(param_list_details):
@@ -359,7 +406,7 @@ def create_param_frame(app_instance, parent_tab_frame, title, param_list_details
         param_vars_dict[key] = {"var": var, "widget": entry} # Store var and widget
         param_group_frame.columnconfigure(col_group*2+1, weight=1)
         param_group_frame.columnconfigure(col_group*2, weight=0)
-    return param_group_frame
+    return collapsible_group_frame
 
 def add_reset_button_to_tab(app_instance, tab_frame, params_vars_dict_with_widget, fields_structure_list, measurement_name):
     style = STYLE_CONFIG
