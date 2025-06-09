@@ -1,25 +1,40 @@
 # config_settings.py
 import os
+import sys # Import sys for stderr
 
 # --- TSP Script Path Configuration ---
 try:
     _CONFIG_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
     TSP_SCRIPT_BASE_PATH = os.path.join(_CONFIG_FILE_DIR, "tsp_scripts")
     if not os.path.isdir(TSP_SCRIPT_BASE_PATH):
-        print(f"Warning: Relative TSP script path not found: {TSP_SCRIPT_BASE_PATH}")
-        # Fallback or error handling as before
-        TSP_SCRIPT_BASE_PATH = "C:/Users/ek22326/OneDrive - University of Bristol/Documents/TSP_PYTHON/gemini/" # Fallback
-except NameError:
-    print("Warning: Could not determine script directory. Using CWD for TSP_SCRIPT_BASE_PATH or a hardcoded fallback.")
+        print(f"Warning: Relative TSP script path based on __file__ not found: {TSP_SCRIPT_BASE_PATH}", file=sys.stderr)
+        TSP_SCRIPT_BASE_PATH = os.path.join(os.getcwd(), "tsp_scripts")
+        if not os.path.isdir(TSP_SCRIPT_BASE_PATH):
+            print(f"Warning: Relative TSP script path based on CWD not found: {TSP_SCRIPT_BASE_PATH}", file=sys.stderr)
+            print("Critical Error: TSP script directory could not be determined. Please ensure 'tsp_scripts' directory exists relative to the application or current working directory.", file=sys.stderr)
+            TSP_SCRIPT_BASE_PATH = "" # Set to empty string
+        else:
+            print(f"Info: Using TSP script path based on CWD: {TSP_SCRIPT_BASE_PATH}")
+    else:
+        print(f"Info: Using TSP script path based on __file__: {TSP_SCRIPT_BASE_PATH}")
+except NameError: # Should ideally not happen if __file__ is defined
+    print("Warning: Could not determine script directory via __file__. Trying CWD for TSP_SCRIPT_BASE_PATH.", file=sys.stderr)
     TSP_SCRIPT_BASE_PATH = os.path.join(os.getcwd(), "tsp_scripts")
     if not os.path.isdir(TSP_SCRIPT_BASE_PATH):
-        TSP_SCRIPT_BASE_PATH = "C:/Users/ek22326/OneDrive - University of Bristol/Documents/TSP_PYTHON/gemini/" # Fallback
+        print(f"Warning: Relative TSP script path based on CWD not found: {TSP_SCRIPT_BASE_PATH}", file=sys.stderr)
+        print("Critical Error: TSP script directory could not be determined. Please ensure 'tsp_scripts' directory exists relative to the application or current working directory.", file=sys.stderr)
+        TSP_SCRIPT_BASE_PATH = "" # Set to empty string
+    else:
+        print(f"Info: Using TSP script path based on CWD: {TSP_SCRIPT_BASE_PATH}")
 
+# Define DEFAULT_TSP_* paths using the determined TSP_SCRIPT_BASE_PATH
+# If TSP_SCRIPT_BASE_PATH is "", os.path.join will correctly create paths relative to CWD at the point of use (e.g. "GateSweep.tsp"),
+# which will likely not exist if the 'tsp_scripts' folder isn't in CWD, leading to FileNotFoundError later as intended.
 DEFAULT_TSP_GATE_TRANSFER = os.path.join(TSP_SCRIPT_BASE_PATH, "GateSweep.tsp")
 DEFAULT_TSP_OUTPUT_CHAR = os.path.join(TSP_SCRIPT_BASE_PATH, "IDVD.tsp")
 DEFAULT_TSP_BREAKDOWN = os.path.join(TSP_SCRIPT_BASE_PATH, "BV.tsp")
 DEFAULT_TSP_DIODE = os.path.join(TSP_SCRIPT_BASE_PATH, "diode.tsp")
-DEFAULT_TSP_STRESS = os.path.join(TSP_SCRIPT_BASE_PATH, "Stress.tsp") # New Stress TSP
+DEFAULT_TSP_STRESS = os.path.join(TSP_SCRIPT_BASE_PATH, "Stress.tsp")
 
 # --- Default Instrument Settings ---
 DEFAULT_GPIB_ADDRESS = 'GPIB0::30::INSTR' # 请根据您的实际GPIB地址修改
@@ -80,6 +95,7 @@ GT_DEFAULT_VG_STOP = "2.0"
 GT_DEFAULT_VG_STEP = "0.1"
 GT_DEFAULT_VD = "1"
 GT_DEFAULT_SETTLING_DELAY = DEFAULT_SETTLING_DELAY_S
+GT_DEFAULT_ENABLE_BACKWARD = True # Added for gui_utils checkbox reset
 
 # Output Characteristics Defaults
 OC_DEFAULT_ILIMIT_DRAIN = "0.1"
@@ -114,6 +130,7 @@ DIODE_DEFAULT_VANODE_START = "0"
 DIODE_DEFAULT_VANODE_STOP = "3"
 DIODE_DEFAULT_VANODE_STEP = "0.1"
 DIODE_DEFAULT_SETTLING_DELAY = DEFAULT_SETTLING_DELAY_S
+DIODE_DEFAULT_ENABLE_BACKWARD = True # Added for gui_utils checkbox reset
 
 # Stress Test Defaults (New Section)
 STRESS_DEFAULT_VD_STRESS = "5.0"       # (V)
@@ -132,3 +149,7 @@ STRESS_DEFAULT_SOURCE_NPLC = "1"       # NPLC for the source SMU
 # Device Parameter Defaults (Common)
 DEVICE_DEFAULT_CHANNEL_WIDTH_UM = "100.0"
 DEVICE_DEFAULT_AREA_UM2 = "10000.0"
+
+# Mobility related defaults (used in gui_utils.reset_params_to_default if passed as StringVar)
+GT_DEFAULT_CHANNEL_LENGTH_UM = "10.0" # Example default
+GT_DEFAULT_C_OX_NF_CM2 = "34.5"      # Example default (for 100nm SiO2)

@@ -49,10 +49,7 @@ class MeasurementBase(abc.ABC):
             raise FileNotFoundError(
                 f"TSP script path '{tsp_script_path}' for {self.measurement_type_name_full} is invalid or not found."
             )
-        if not instrument_utils.load_tsp_script(inst, tsp_script_path, tsp_params):
-            raise RuntimeError(
-                f"Failed to load/run TSP script '{tsp_script_path}' for {self.measurement_type_name_full}."
-            )
+        instrument_utils.load_tsp_script(inst, tsp_script_path, tsp_params) # Will raise exception on failure
 
     @abc.abstractmethod
     def _get_primary_buffer_info(self, config):

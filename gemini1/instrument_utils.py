@@ -44,23 +44,23 @@ def query_buffer(inst, buffer_name, num_readings):
         num_readings_int = int(num_readings)
         if num_readings_int <= 0:
             # print(f"  Query_buffer: num_readings is {num_readings_int} for {buffer_name}. Will try to read all if possible by TSP printbuffer.")
-            pass 
+            pass
         cmd = f'printbuffer(1, {num_readings_int}, {buffer_name})'
         return inst.query(cmd).strip()
     except pyvisa.errors.VisaIOError as e:
-        print(f"查询缓冲区 {buffer_name} 时发生VISA错误: {str(e)}", file=sys.stderr)
-        return ""
+        # print(f"查询缓冲区 {buffer_name} 时发生VISA错误: {str(e)}", file=sys.stderr)
+        raise  # Re-raise the VisaIOError
     except Exception as e:
-        print(f"查询缓冲区 {buffer_name} 时发生一般错误: {str(e)}", file=sys.stderr)
-        return ""
+        # print(f"查询缓冲区 {buffer_name} 时发生一般错误: {str(e)}", file=sys.stderr)
+        raise RuntimeError(f"查询缓冲区 {buffer_name} 时发生一般错误: {str(e)}") from e
 
 def safe_float_convert(data_str):
     """安全地将字符串转换为浮点数数组"""
     try:
         return np.array([float(x) for x in data_str.split(',') if x.strip()])
-    except ValueError:
+    except ValueError as ve:
         # print(f"  Safe_float_convert: ValueError converting data string: '{data_str[:50]}...'", file=sys.stderr)
-        return np.array([])
+        raise  # Re-raise the ValueError
 
 def load_tsp_script(inst, script_path, tsp_params):
     """加载TSP脚本并运行，替换占位符。"""
@@ -79,15 +79,15 @@ def load_tsp_script(inst, script_path, tsp_params):
         inst.write("script.run()")
         # print(f"  TSP script '{os.path.basename(script_path)}' loaded and run.")
         return True
-    except FileNotFoundError:
-        print(f"TSP脚本加载失败: 在 {script_path} 未找到文件", file=sys.stderr)
-        return False
-    except pyvisa.errors.VisaIOError as e:
-        print(f"在 {script_path} 的TSP脚本加载/运行期间发生VISA错误: {str(e)}", file=sys.stderr)
-        return False
+    except FileNotFoundError as fe:
+        # print(f"TSP脚本加载失败: 在 {script_path} 未找到文件", file=sys.stderr)
+        raise  # Re-raise the FileNotFoundError
+    except pyvisa.errors.VisaIOError as ve:
+        # print(f"在 {script_path} 的TSP脚本加载/运行期间发生VISA错误: {str(e)}", file=sys.stderr)
+        raise  # Re-raise the VisaIOError
     except Exception as e:
-        print(f"在 {script_path} 的TSP脚本加载/运行期间发生一般错误: {str(e)}", file=sys.stderr)
-        return False
+        # print(f"在 {script_path} 的TSP脚本加载/运行期间发生一般错误: {str(e)}", file=sys.stderr)
+        raise RuntimeError(f"在 {script_path} 的TSP脚本加载/运行期间发生一般错误: {str(e)}") from e
 
 @contextmanager
 def visa_instrument(gpib_address, timeout, measurement_type_name="测量"):
@@ -182,7 +182,7 @@ def determine_consistent_length(raw_data_dict, priority_keys=None, retrieved_cou
 def normalize_data_arrays(raw_data_dict, consistent_length):
     processed_data = {}
     if consistent_length == 0:
-        for name in raw_data_dict.keys(): 
+        for name in raw_data_dict.keys():
             processed_data[name] = np.array([])
         return processed_data
 
@@ -194,7 +194,7 @@ def normalize_data_arrays(raw_data_dict, consistent_length):
             processed_data[name] = arr
         elif len(arr) > consistent_length:
             processed_data[name] = arr[:consistent_length]
-        else: 
+        else:
             padded_arr = np.full(consistent_length, np.nan)
             if len(arr) > 0 : padded_arr[:len(arr)] = arr
             processed_data[name] = padded_arr
@@ -208,8 +208,6 @@ def calculate_source_current(processed_data,
     Prioritizes directly measured Is_buffer if it exists and has data.
     Otherwise, calculates Is = -(Id + Ig).
     """
-    # Determine a reference length primarily from Id or Ig if they exist and are valid
-    # This reference length is used if we need to calculate Is.
     ref_len_for_calc = 0
     id_data_for_len_check = processed_data.get(id_key)
     ig_data_for_len_check = processed_data.get(ig_key)
@@ -218,44 +216,28 @@ def calculate_source_current(processed_data,
         ref_len_for_calc = id_data_for_len_check.size
     elif isinstance(ig_data_for_len_check, np.ndarray) and ig_data_for_len_check.size > 0:
         ref_len_for_calc = ig_data_for_len_check.size
-    
+
     is_buffer_data = processed_data.get(is_buffer_key)
     use_is_buffer_directly = False
 
     if isinstance(is_buffer_data, np.ndarray) and is_buffer_data.size > 0:
-        # If Is_buffer exists and has any data (even if all NaNs or compliance values),
-        # we prioritize it. The normalization step in MeasurementBase should have handled lengths.
         use_is_buffer_directly = True
-        # print(f"DEBUG IsCalc: Is_buffer found (length {is_buffer_data.size}). Prioritizing it for Is.")
     else:
-        # print(f"DEBUG IsCalc: Is_buffer not suitable (not an array, or size is 0). Will attempt to calculate Is.")
-        pass
+        pass # Is_buffer not suitable or not found, will attempt to calculate Is
 
     if use_is_buffer_directly:
-        # print("DEBUG IsCalc: Using directly measured Is_buffer for Is.")
-        # MeasurementBase.normalize_data_arrays will ensure this is padded/truncated to consistent_len later
-        # if it's not already. Here, we just assign what was read.
-        processed_data[is_out_key] = is_buffer_data 
-        # --- DEBUG PRINT FOR Is_buffer ---
-        # if isinstance(processed_data[is_out_key], np.ndarray) and processed_data[is_out_key].size > 0:
-        #     print(f"DEBUG IsCalc: First few Is_buffer values used for Is: {processed_data[is_out_key][:14]}")
-        # else:
-        #     print(f"DEBUG IsCalc: Is_buffer (used for Is) is empty or not an array after assignment.")
-        # --- END DEBUG ---
+        processed_data[is_out_key] = is_buffer_data
     else:
-        # print("DEBUG IsCalc: Calculating Is = -(Id + Ig).")
         id_data = processed_data.get(id_key)
         ig_data = processed_data.get(ig_key)
 
         valid_id_for_calc = isinstance(id_data, np.ndarray) and (ref_len_for_calc == 0 or id_data.size == ref_len_for_calc)
         valid_ig_for_calc = isinstance(ig_data, np.ndarray) and (ref_len_for_calc == 0 or ig_data.size == ref_len_for_calc)
-        
-        # If ref_len_for_calc is still 0 but one of them has data, update ref_len_for_calc
+
         if ref_len_for_calc == 0:
             if valid_id_for_calc and id_data.size > 0: ref_len_for_calc = id_data.size
             elif valid_ig_for_calc and ig_data.size > 0: ref_len_for_calc = ig_data.size
-        
-        # Re-validate with potentially updated ref_len_for_calc
+
         valid_id_for_calc = isinstance(id_data, np.ndarray) and id_data.size == ref_len_for_calc
         valid_ig_for_calc = isinstance(ig_data, np.ndarray) and ig_data.size == ref_len_for_calc
 
@@ -263,18 +245,10 @@ def calculate_source_current(processed_data,
             processed_data[is_out_key] = -(id_data + ig_data)
         else:
             processed_data[is_out_key] = np.full(ref_len_for_calc if ref_len_for_calc > 0 else 0, np.nan)
-        
-        # --- DEBUG PRINT FOR CALCULATED Is ---
-        # if isinstance(processed_data.get(is_out_key), np.ndarray) and processed_data[is_out_key].size > 0:
-        #     print(f"DEBUG IsCalc: First few CALCD Is values: {processed_data[is_out_key][:5]}")
-        # else:
-        #     print(f"DEBUG IsCalc: Calculated Is is empty or not an array.")
-        # --- END DEBUG ---
 
-    # Ensure Is output key exists as an array even if all attempts fail
     if is_out_key not in processed_data or not isinstance(processed_data[is_out_key], np.ndarray):
         processed_data[is_out_key] = np.array([])
-    
+
     return processed_data
 
 
@@ -282,31 +256,31 @@ def calculate_current_densities(processed_data, device_config,
                                 current_keys=('Id', 'Ig', 'Is'),
                                 density_keys=('Jd', 'Jg', 'Js')):
     device_type = device_config.get('device_type', 'unknown')
-    try: channel_width_um = float(device_config.get('channel_width', 0)) 
+    try: channel_width_um = float(device_config.get('channel_width', 0))
     except (ValueError, TypeError): channel_width_um = 0
-    try: area_um2 = float(device_config.get('area', 0)) 
+    try: area_um2 = float(device_config.get('area', 0))
     except (ValueError, TypeError): area_um2 = 0
 
     J_coeff = 0
-    jd_unit_plot = 'A.U.' 
+    jd_unit_plot = 'A.U.'
 
     if device_type == "lateral":
         jd_unit_plot = 'mA/mm'
         if channel_width_um > 0:
-            channel_width_mm = channel_width_um * 1e-3 
-            J_coeff = 1e3 / channel_width_mm 
+            channel_width_mm = channel_width_um * 1e-3
+            J_coeff = 1e3 / channel_width_mm
     elif device_type == "vertical":
         jd_unit_plot = 'A/cm^2'
         if area_um2 > 0:
-            area_cm2 = area_um2 * 1e-8 
-            J_coeff = 1 / area_cm2 
-    
+            area_cm2 = area_um2 * 1e-8
+            J_coeff = 1 / area_cm2
+
     ref_len = 0
     for key in current_keys:
         if key in processed_data and isinstance(processed_data[key], np.ndarray) and processed_data[key].size > 0:
             ref_len = len(processed_data[key])
             break
-    if ref_len == 0 and 'Id' in processed_data and isinstance(processed_data['Id'], np.ndarray): 
+    if ref_len == 0 and 'Id' in processed_data and isinstance(processed_data['Id'], np.ndarray):
         ref_len = len(processed_data['Id'])
 
 
@@ -314,12 +288,12 @@ def calculate_current_densities(processed_data, device_config,
         density_key = density_keys[i]
         current_array = processed_data.get(current_key)
 
-        if isinstance(current_array, np.ndarray) and current_array.size == ref_len and ref_len > 0 : 
+        if isinstance(current_array, np.ndarray) and current_array.size == ref_len and ref_len > 0 :
             if J_coeff != 0:
                 processed_data[density_key] = current_array * J_coeff
-            else: 
+            else:
                 processed_data[density_key] = np.where(np.isnan(current_array), np.nan, 0.0)
-        else: 
+        else:
             processed_data[density_key] = np.full(ref_len if ref_len > 0 else 0, np.nan)
     return processed_data, jd_unit_plot
 
@@ -335,7 +309,7 @@ def save_data_to_csv(file_path, data_dict, column_keys, header_string, comments=
                 if not first_valid_key_found:
                     expected_len = len(arr)
                     first_valid_key_found = True
-        if not first_valid_key_found and expected_len == -1: 
+        if not first_valid_key_found and expected_len == -1:
             with open(file_path, 'w', encoding='utf-8') as f:
                 if comments:
                     f.write(comments)
@@ -349,17 +323,17 @@ def save_data_to_csv(file_path, data_dict, column_keys, header_string, comments=
             if isinstance(arr, np.ndarray) and arr.ndim == 1:
                 if len(arr) == expected_len:
                     save_data_arrays.append(arr)
-                else: 
+                else:
                     normalized_arr = np.full(expected_len, np.nan)
                     common_length_to_copy = min(len(arr), expected_len)
                     if common_length_to_copy > 0 : normalized_arr[:common_length_to_copy] = arr[:common_length_to_copy]
                     save_data_arrays.append(normalized_arr)
-            elif key in data_dict : 
-                 save_data_arrays.append(np.full(expected_len, np.nan)) 
-            else: 
+            elif key in data_dict :
+                 save_data_arrays.append(np.full(expected_len, np.nan))
+            else:
                 save_data_arrays.append(np.full(expected_len, np.nan))
 
-        if not save_data_arrays: 
+        if not save_data_arrays:
             with open(file_path, 'w', encoding='utf-8') as f:
                 if comments:
                     f.write(comments)
